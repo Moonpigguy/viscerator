@@ -1,0 +1,49 @@
+{
+  "name": "Viscerator",
+  "tree": {
+      "$className": "DataModel",
+
+      "ReplicatedStorage": {
+          "$className": "ReplicatedStorage",
+          "$path": "src/ReplicatedStorage",
+          "$ignoreUnknownInstances": true,
+          "Assets": {
+            "$className": "Assets",
+            "$path": "src/ReplicatedStorage/Assets",
+            "$ignoreUnknownInstances": true,
+            "Modules": {
+                "$className": "Modules",
+                "$path": "src/ReplicatedStorage/Assets/Modules",
+                "$ignoreUnknownInstances": true
+                }
+            }
+        },
+
+      "ServerScriptService": {
+          "$className": "ServerScriptService",
+          "$path": "src/ServerScriptService",
+          "$ignoreUnknownInstances": true
+      },
+
+      "ServerStorage": {
+          "$className": "ServerStorage",
+          "$path": "src/ServerStorage",
+          "$ignoreUnknownInstances": true
+          
+      },
+
+      "StarterPlayer": {
+          "$className": "StarterPlayer",
+          "StarterCharacterScripts": {
+              "$className": "StarterCharacterScripts",
+              "$path": "src/StarterPlayer/StarterCharacterScripts",
+              "$ignoreUnknownInstances": true
+          },
+          "StarterPlayerScripts": {
+              "$className": "StarterPlayerScripts",
+              "$path": "src/StarterPlayer/StarterPlayerScripts",
+              "$ignoreUnknownInstances": true
+          }
+        }
+  }
+}
