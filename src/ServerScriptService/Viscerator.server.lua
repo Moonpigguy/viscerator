@@ -1,7 +1,7 @@
 -- make heli functional and add AI
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local heli = game:GetService("Workspace").Manhack
+local heli = workspace.Manhacks.Manhack
 heli:SetNetworkOwner(nil)
 local engine = heli
 local heliForce = Instance.new("BodyForce")
@@ -12,26 +12,24 @@ heliTorque.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
 heliTorque.P = 4000
 local gravity = workspace.Gravity
 
-local FIRING = false
-
 local mainThrottle = 1
 local throttleStrength = 1
 local dragCoefficient = 1
-local tiltMultiplier = 5
-local maxPitch = -40 -- degrees
-local maxRoll = -10 -- degrees
+local tiltMultiplier = 2
+local maxRoll = -5 -- degrees
 local velocityLimit = 10 -- m/s
-local velocityDistance = 10000
-local maxDistance = 100
-local slowDownHeight = 20
-local hoverDistance = 70
+local maxDistance = 4
+local collisionCooldown = 0.5
 
 local paths = {}
+local TARGET = CFrame.new(heli.Position)
+local TARGETCHAR = nil
 
-local lastMagnitude = 0
-local mass = 50.354
+local mass = 30.371
 
 local grindSounds = {"rbxassetid://11235822168", "rbxassetid://11235822778", "rbxassetid://11235819921", "rbxassetid://11235820618", "rbxassetid://11235821550"}
+
+local lastCollision = tick()
 
 
 
@@ -63,7 +61,7 @@ local function flyToCFrame(cframe)
     
     -- set desiredPitch to the angle needed to face the target
     
-    local desiredPitch = -15
+    local desiredPitch = -5
 
 
 
@@ -78,9 +76,8 @@ local function flyToCFrame(cframe)
     if distance < maxDistance then
         desiredPitch = desiredPitch * (distance / maxDistance)
     end
-    if velocityMagnitude > velocityLimit then
-        desiredPitch = desiredPitch * (velocityLimit / velocityMagnitude)
-    end
+
+    
 
     
 
@@ -113,25 +110,15 @@ local function flyToCFrame(cframe)
         horizontalDistance = 1
     end
     -- if helicopter is below cframe, fly up and compensate for gravity
-    throttleStrength = -4000 * math.atan2((engine.Position.Y - cframe.p.Y), 50)
-    -- if helicopter is approaching target above speed limit, slow down using vertical velocity
-    -- decelerate object before it reaches target so it stops perfectly using force
-    local decel = 0
-    if verticalDistance < 10 then
-        decel = (0 - engine.Velocity.Y) / (verticalDistance / engine.Velocity.Y)
-    end
-    local appliedForce = decel * mass
-    if appliedForce > 0 then
-        throttleStrength = throttleStrength - appliedForce
-    end
+    throttleStrength = -10000 * math.atan2((engine.Position.Y - cframe.p.Y), 50)
     -- if helicopter is too close to the ground, fly up
-    local ray = Ray.new(engine.Position, Vector3.new(0, -4, 0))
-    local part, position = workspace:FindPartOnRayWithIgnoreList(ray, {engine, workspace.TARGET})
-    if engine.Position.Y < 4 then -- lerp velocity up to 0 if helicopter is too close to the ground
+    -- raycast towards the ground and check if the distance is less than 10
+    local ray = Ray.new(engine.Position, Vector3.new(0, -2, 0))
+    local part = workspace:FindPartOnRayWithIgnoreList(ray, {engine})
+    if part then
         engine.Velocity = engine.Velocity:Lerp(Vector3.new(engine.Velocity, 10, engine.Velocity), 0.05)
     end
 
-    -- the closer the helicopter is vertically to the target, lower the throttle
     if throttleStrength ~= throttleStrength then
         throttleStrength = heliForce.Force.Y - mass * gravity
     end
@@ -179,11 +166,8 @@ local function getClosestPath()
     return closestPath
 end
 
--- check around the path to see if the helicopter will fit
-
 
 local currentCFrame = nil
-local heliSize = 1
 local nodeDistance = 1
 local currentPaths = {}
 local function updatePaths()
@@ -203,45 +187,64 @@ local function updatePaths()
     end
 end
 
-local function raycastAround(position) -- raycast multiple times in a sphere shape to see if there is anything near the position
+local function raycastAround(position, range)
     local raycastParams = RaycastParams.new()
     raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-    raycastParams.FilterDescendantsInstances = {engine, workspace.TARGET}
+    raycastParams.FilterDescendantsInstances = {engine}
     local hitTargets = {}
     for i = 1, 360, 10 do
-        local ray = Ray.new(position, Vector3.new(math.cos(math.rad(i)) * nodeDistance, 0, math.sin(math.rad(i)) * nodeDistance))
-        local part, pos = workspace:FindPartOnRayWithIgnoreList(ray, {workspace.TARGET})
+        local ray = Ray.new(position, Vector3.new(math.cos(math.rad(i)) * range, 0, math.sin(math.rad(i)) * range))
+        local part, pos = workspace:FindPartOnRayWithIgnoreList(ray, {engine})
         if part then
-            table.insert(hitTargets, pos)
+            table.insert(hitTargets, {part = part, pos = pos})
         end
     end
-    -- do same vertically
-    --[[for i = 1, 360, 10 do
-        local ray = Ray.new(position, Vector3.new(0, math.cos(math.rad(i)) * nodeDistance, math.sin(math.rad(i)) * nodeDistance))
-        local part, pos = workspace:FindPartOnRayWithIgnoreList(ray, {workspace.TARGET})
-        if part then
-            table.insert(hitTargets, pos)
-        end
-    end]]
     return hitTargets
+end
+
+local function raycastAboveAndBelow(position, range)
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    raycastParams.FilterDescendantsInstances = {engine}
+    local hitTargets = {}
+    local ray = Ray.new(position, Vector3.new(0, range, 0))
+    local part, pos = workspace:FindPartOnRayWithIgnoreList(ray, {engine})
+    if part then
+        table.insert(hitTargets, {part = part, pos = pos})
+    end
+    local ray = Ray.new(position, Vector3.new(0, -range, 0))
+    local part, pos = workspace:FindPartOnRayWithIgnoreList(ray, {engine})
+    if part then
+        table.insert(hitTargets, {part = part, pos = pos})
+    end
+    return hitTargets
+end
+
+local function checkAndDamage(part, damage)
+    if not part then return end
+
+    if part.Parent and part.Parent:FindFirstChild("Humanoid") then
+        local humanoid = part.Parent.Humanoid
+        if humanoid.Health > 0 then
+            humanoid:TakeDamage(damage)
+        end
+    elseif part.Parent.Parent and part.Parent.Parent:FindFirstChild("Humanoid") then
+        local humanoid = part.Parent.Parent.Humanoid
+        if humanoid.Health > 0 then
+            humanoid:TakeDamage(damage)
+        end
+    end
 end
     
 
 game:GetService("RunService").Heartbeat:Connect(function()
     -- follow path
     updatePaths()
-    
+    local closestCharacter2 = getClosestCharacter(math.huge)
     -- if player is in sight of helicopter using raycasting, fly to them
-    local ray = Ray.new(engine.Position, (workspace.TARGET.Position - engine.Position).Unit * 1000)
+    local ray = Ray.new(engine.Position, (TARGET.Position - engine.Position).Unit * 1000)
     local part, position = workspace:FindPartOnRayWithIgnoreList(ray, {engine})
-    local closestPath = getClosestPath()
-    if closestPath and (closestPath - engine.Position).Magnitude < 30 then
-        currentCFrame = CFrame.new(closestPath+Vector3.new(0,2,0))
-    end
     for i, path in pairs(paths) do
-        -- if path is too close to a wall, space it out
-        
-        -- if path is too close to a wall, space it out
 
         -- check if velocity is towards the path
         local velocity = engine.Velocity
@@ -250,42 +253,63 @@ game:GetService("RunService").Heartbeat:Connect(function()
         local dot = velocityUnit:Dot(pathUnit)
         if (engine.Position - path).Magnitude < 4.5 then --and not (dot < 0) then
             table.remove(paths, i)
-            print("removed path")
         end
     end
-    if part and part == workspace.TARGET then
-        --currentCFrame = CFrame.new(workspace.TARGET.Position)
-        --print("target in sight")
+    local closestPath = getClosestPath()
+    if part and part.Parent:FindFirstChild("Humanoid") then
+        currentCFrame = CFrame.new(part.Position-Vector3.new(0, 1, 0))
+    elseif closestPath and (closestPath - engine.Position).Magnitude < 30 then
+        currentCFrame = CFrame.new(closestPath+Vector3.new(0,2,0))
     end
     if currentCFrame then
         flyToCFrame(currentCFrame)
     end
     doPhysics()
-    local closestCharacter2 = getClosestCharacter(math.huge)
     if closestCharacter2 then
-        workspace.TARGET.CFrame = CFrame.new(closestCharacter2.HumanoidRootPart.Position, closestCharacter2.HumanoidRootPart.Position + Vector3.new(0, 1, 0))
+        TARGET = CFrame.new(closestCharacter2.HumanoidRootPart.Position, closestCharacter2.HumanoidRootPart.Position + Vector3.new(0, 1, 0))
     end
     -- if helicopter is near a wall then bounce off it
-    local ray = Ray.new(engine.Position, engine.Velocity.Unit * 2)
-    local part, position = workspace:FindPartOnRayWithIgnoreList(ray, {engine, heliTorque, heliForce})
-    --[[if part then
-        playGrindSound()
-        local velocity = engine.Velocity
-        local newVelocity = -velocity * 0.7
-        engine.Velocity = newVelocity
-        if part.Parent and part.Parent:FindFirstChildOfClass("Humanoid") then
-            part.Parent.Humanoid:TakeDamage(10)
+    if tick() - lastCollision > collisionCooldown then
+        local ray = Ray.new(engine.Position, engine.Velocity.Unit * 1.5)
+        local part, position = workspace:FindPartOnRayWithIgnoreList(ray, {engine, heliTorque, heliForce})
+        local hitTargets = {} --raycastAround(engine.Position, 0.5)
+        if part then
+            playGrindSound()
+            engine.Velocity = -engine.Velocity.Unit * 20
+            checkAndDamage(part, 10)
+            lastCollision = tick()
+        elseif #hitTargets > 0 then
+            playGrindSound()
+            local newVelocity = engine.Position - hitTargets[1].pos
+            engine.Velocity = newVelocity.Unit * 15
+            checkAndDamage(hitTargets[1].part, 10)
+            print("hit", hitTargets[1].part)
+            lastCollision = tick()
         end
-    end]]
+    end
+    -- if velocity is under 5 for over 4 seconds then toggle collision
+    local lowVelocityTime = 0
+    if engine.Velocity.Magnitude < 5 then
+        lowVelocityTime += 1
+        if lowVelocityTime > 50 then
+            engine.Velocity = -heliForce.Force / mass
+            print(engine.Velocity)
+        end
+    else
+        engine.CanCollide = true
+        lowVelocityTime = 0
+    end
+
 end)
 
-local pathfindingSize = 4
-local YSize = 4
+local pathfindingSize = 3
+local YSize = 2
 local YOffset = 0
+-- pathfind using raycasting and A* algorithm in a 3d space with a helicopter (efficient)
 local function pathfind()
     local path = {}
     local start = Vector3.new(math.floor(engine.Position.X / pathfindingSize) * pathfindingSize, math.floor((engine.Position.Y + YOffset) / YSize) * YSize, math.floor(engine.Position.Z / pathfindingSize) * pathfindingSize)
-    local goal = Vector3.new(math.floor(workspace.TARGET.Position.X / pathfindingSize) * pathfindingSize, math.floor(workspace.TARGET.Position.Y / YSize) * YSize, math.floor(workspace.TARGET.Position.Z / pathfindingSize) * pathfindingSize)
+    local goal = Vector3.new(math.floor(TARGET.Position.X / pathfindingSize) * pathfindingSize, math.floor(TARGET.Position.Y / YSize) * YSize, math.floor(TARGET.Position.Z / pathfindingSize) * pathfindingSize)
     local openList = {}
     local closedList = {}
     local startNode = {
@@ -297,7 +321,7 @@ local function pathfind()
     }
     table.insert(openList, startNode)
     local iterations = 0
-    while #openList > 0 and iterations < 1000 do
+    while #openList > 0 and iterations < 200 / #heli.Parent:GetChildren() do
         iterations = iterations + 1
         local currentNode = openList[1]
         local currentIndex = 1
@@ -371,20 +395,28 @@ end
 local function updatePaths()
     local path = pathfind()
     
-    if #path > 0 then
+    if #path > 1 then
         for i, p in pairs(path) do
-            local hitTargets = raycastAround(p)
+            local hitTargets = raycastAround(p, nodeDistance)
             if #hitTargets > 0 then
                 local average = Vector3.new(0, 0, 0)
                 for _,v in pairs(hitTargets) do
-                    average = average + v
+                    average = average + v.pos
                 end
                 average = average / #hitTargets
-                path[i] = average * 1.5
+                path[i] = average * 2
+            end
+            local verticalHitTargets = raycastAboveAndBelow(p, nodeDistance)
+            if #verticalHitTargets > 0 then
+                local average = Vector3.new(0, 0, 0)
+                for _,v in pairs(verticalHitTargets) do
+                    average = average + v.pos
+                end
+                average = average / #verticalHitTargets
+                path[i] = average * 2
             end
         end
         paths = path
-        print("found path")
     end
 end
 
@@ -395,3 +427,7 @@ end)
 ReplicatedStorage:WaitForChild("Move").OnServerEvent:Connect(function(player, position)
     engine.Position = position
 end)
+while true do
+    updatePaths()
+    task.wait(0.05)
+end
