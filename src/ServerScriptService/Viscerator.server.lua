@@ -54,22 +54,12 @@ end
 
 
 local function flyToCFrame(cframe)
-    -- use dot and cross to yaw towards cframe
     local engineCFrame = engine.CFrame
     local engineVector = engineCFrame.LookVector
     local targetVector = (cframe.Position - engineCFrame.Position)
     
-    -- set desiredPitch to the angle needed to face the target
-    
     local desiredPitch = -5
 
-
-
-    
-
-
-
-    -- make desiredPitch less the closer the helicopter is to the target
     local distance = (cframe.Position - engineCFrame.Position).Magnitude
     local velocity = engine.Velocity
     local velocityMagnitude = velocity.Magnitude
@@ -77,11 +67,6 @@ local function flyToCFrame(cframe)
         desiredPitch = desiredPitch * (distance / maxDistance)
     end
 
-    
-
-    
-
-    -- roll towards the target
     local desiredRoll = 0
     local cross = engineVector:Cross(targetVector)
     if cross.Y > 0 then
@@ -101,18 +86,18 @@ local function flyToCFrame(cframe)
     
     heliTorque.CFrame = CFrame.new(engineCFrame.Position, Vector3.new(cframe.Position.X, engineCFrame.Position.Y, cframe.Position.Z)) * CFrame.Angles(math.rad(desiredPitch), 0, math.rad(desiredRoll))
 
-    -- get distance between current position and cframe
     local distance = (engine.Position - cframe.p).magnitude
-    -- get horizontal distance between current position and cframe
+
     local horizontalDistance = (Vector3.new(engine.Position.X, 0, engine.Position.Z) - Vector3.new(cframe.p.X, 0, cframe.p.Z)).magnitude
     local verticalDistance = engine.Position.Y - cframe.p.Y
+	
     if horizontalDistance ~= horizontalDistance then
         horizontalDistance = 1
     end
     -- if helicopter is below cframe, fly up and compensate for gravity
     throttleStrength = -10000 * math.atan2((engine.Position.Y - cframe.p.Y), 50)
+	
     -- if helicopter is too close to the ground, fly up
-    -- raycast towards the ground and check if the distance is less than 10
     local ray = Ray.new(engine.Position, Vector3.new(0, -2, 0))
     local part = workspace:FindPartOnRayWithIgnoreList(ray, {engine})
     if part then
